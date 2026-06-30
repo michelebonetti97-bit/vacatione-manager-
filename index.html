@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#007AFF">
+  <title>Vacation Manager</title>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <style>
+    :root {
+      --blue: #007AFF;
+      --green: #34C759;
+      --orange: #FF9500;
+      --red: #FF3B30;
+      --gray: #8E8E93;
+      --bg: #F2F2F7;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, sans-serif; }
+    body { background: var(--bg); }
+    .header { padding: 16px 20px; padding-top: calc(16px + env(safe-area-inset-top)); display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { font-size: 32px; font-weight: 700; }
+    .card { background: white; border-radius: 16px; padding: 16px; margin: 0 16px 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+    .btn { border: none; border-radius: 12px; padding: 14px 20px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%; margin-bottom: 10px; }
+    .btn-primary { background: var(--blue); color: white; }
+    .btn-success { background: var(--green); color: white; }
+    .btn-danger { background: var(--red); color: white; }
+    .btn-ghost { background: var(--bg); color: var(--blue); }
+    .input { width: 100%; padding: 14px; border: none; border-radius: 12px; background: var(--bg); font-size: 16px; margin-bottom: 12px; }
+    .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(255,255,255,0.92); backdrop-filter: blur(20px); display: flex; justify-content: space-around; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); border-top: 0.5px solid rgba(0,0,0,0.1); }
+    .tab-item { background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 10px; color: var(--gray); padding: 4px 16px; }
+    .tab-item.active { color: var(--blue); }
+    .tab-item span:first-child { font-size: 24px; }
+    .progress-bar { height: 10px; background: var(--bg); border-radius: 5px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 5px; transition: width 0.3s; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; font-weight: 700; margin-left: -6px; border: 2px solid white; }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: flex-end; z-index: 1000; }
+    .modal-sheet { background: white; border-radius: 24px 24px 0 0; width: 100%; padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); max-height: 90vh; overflow-y: auto; animation: slideUp 0.3s; }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .nuovo-viaggio { margin: 24px 16px; padding: 32px; border: 2px dashed var(--blue); border-radius: 16px; text-align: center; color: var(--blue); background: transparent; font-size: 16px; font-weight: 600; }
+    .page { padding-bottom: 80px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- HOME -->
+    <div v-if="page === 'home'" class="page">
+      <div class="header">
+        <h1>✈️ I miei viaggi</h1>
+        <button @click="showSettings = true" style="background:none;border:none;font-size:24px">⚙️</button>
+      </div>
+      
+      <div v-if="archiviati.length" @click="page = 'archivio'" class="card" style="display:flex;gap:8px;align-items:center;cursor:pointer">
+        <span>📦 Archivio</span>
+        <span style="color:var(--gray)">({{ archiviati.length }})</span>
+        <span style="margin-left:auto;color:var(--blue)">→</span>
+      </div>
+      
+      <div v-for="v in attivi" :key="v.id" @click="apriViaggio(v)" class="card" style="cursor:pointer">
+        <div style="display:flex;gap:14px;align-items:flex-start">
+          <span style="font-size:52px">{{ v.copertina }}</span>
+          <div>
+            <h3 style="font-size:17px;font-weight:700">{{ v.nome }}</h3>
+            <p style="font-size:13px;color:var(--gray)">{{ formatDate(v.dataInizio, v.dataFine) }}</p>
+            <p style="font-size:13px;color:var(--gray)">{{ v.destinazione }}</p>
+          </div>
+        </div>
+        
+        <div v-if="v.budget" style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:6px">
+            <span>💰 {{ formatN(v.spese.reduce((a,s)=>a+s.importo,0)) }} / {{ formatN(v.budget) }}</span>
+            <span style="color:var(--gray)">{{ Math.round((v.spese.reduce((a,s)=>a+s.importo,0)/v.budget)*100) }}%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{width: Math.min((v.spese.reduce((a,s)=>a+s.importo,0)/v.budget)*100,100)+'%', background: progressColor(v.spese.reduce((a,s)=>a+s.importo,0)/v.budget)}"></div>
+          </div>
+        </div>
+        
+        <div style="display:flex;margin-top:10px">
+          <div v-for="p in v.partecipazioni.filter(x=>x.stato==='accettato')" :key="p.id" class="avatar" :style="{background: randomColor(p.utenteId)}">
+            {{ p.nomeUtente.charAt(0) }}
+          </div>
+        </div>
+      </div>
+      
+      <button @click="showNuovo = true" class="nuovo-viaggio">
+        <div style="font-size:40px;font-weight:300">+</div>
+        <div>Nuovo viaggio</div>
+      </button>
+      
+      <button @click="exportData" class="btn btn-ghost" style="margin:0 16px;width:calc(100% - 32px)">📤 Esporta dati</button>
+    </div>
+    
+    <!-- DETTAGLIO VIAGGIO -->
+    <div v-if="page === 'detail'" class="page">
+      <div style="display:flex;align-items:center;gap:12px;padding:16px;padding-top:calc(16px + env(safe-area-inset-top))">
+        <button @click="page = 'home'" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg);font-size:20px">←</button>
+        <div style="display:flex;align-items:center;gap:12px;flex:1">
+          <span style="font-size:40px">{{ viaggioCorrente?.copertina }}</span>
+          <div>
+            <h2 style="font-size:18px;font-weight:700">{{ viaggioCorrente?.nome }}</h2>
+            <p style="font-size:13px;color:var(--gray)">{{ viaggioCorrente ? formatDate(viaggioCorrente.dataInizio, viaggioCorrente.dataFine) : '' }}</p>
+          </div>
+        </div>
+        <button @click="showMenu = true" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg);font-size:20px">⋯</button>
+      </div>
+      
+      <div v-if="viaggioCorrente?.budget" class="card">
+        <div style="display:flex;justify-content:space-between;margin-bottom:10px;font-size:14px">
+          <span>💰 Budget</span>
+          <span style="font-weight:600">{{ formatN(viaggioCorrente.spese.reduce((a,s)=>a+s.importo,0)) }} / {{ formatN(viaggioCorrente.budget) }}</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" :style="{width: Math.min((viaggioCorrente.spese.reduce((a,s)=>a+s.importo,0)/viaggioCorrente.budget)*100,100)+'%', background: progressColor(viaggioCorrente.spese.reduce((a,s)=>a+s.importo,0)/viaggioCorrente.budget)}"></div>
+        </div>
+      </div>
+      
+      <!-- PREVENTIVI -->
+      <div v-if="tab === 'preventivi'">
+        <button @click="showNuovoPreventivo = true" class="btn btn-primary" style="margin:0 16px 16px;width:calc(100% - 32px)">+ Nuovo preventivo</button>
+        
+        <div v-for="p in viaggioCorrente?.preventivi?.sort((a,b)=>b.priorita-a.priorita)" :key="p.id" class="card">
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <div style="font-size:28px">{{ p.categoria.split(' ')[0] }}</div>
+            <div style="flex:1">
+              <h4 style="font-size:16px;font-weight:600">{{ p.titolo }}</h4>
+              <p v-if="p.fornitore" style="font-size:13px;color:var(--gray)">{{ p.fornitore }}</p>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:18px;font-weight:700">{{ formatN(p.prezzo) }}</div>
+              <span :style="{display:'inline-block',padding:'4px 10px',borderRadius:'100px',fontSize:'12px',fontWeight:'600',background: badgeBg(p.stato), color: badgeColor(p.stato)}">{{ p.stato }}</span>
+            </div>
+          </div>
+          <div v-if="p.priorita >= 2" style="margin-top:10px;padding:8px 12px;background:#FF950015;border-radius:8px;color:var(--orange);font-size:13px;font-weight:500">
+            ⚠️ Priorità {{ p.priorita === 3 ? 'urgente' : 'alta' }}
+          </div>
+          <button v-if="p.stato !== 'accettato' && p.stato !== 'rifiutato'" @click="convertiPreventivo(p.id)" class="btn btn-success" style="margin-top:12px;padding:10px;font-size:14px">✓ Converti in prenotazione</button>
+        </div>
+      </div>
+      
+      <!-- SPESE -->
+      <div v-if="tab === 'spese'">
+        <div class="card">
+          <h4 style="margin-bottom:14px">💰 Saldi</h4>
+          <div v-for="s in saldi" :key="s.utente" style="display:flex;align-items:center;gap:12px;padding:8px 0">
+            <div class="avatar" style="margin-left:0" :style="{background: randomColor(s.utente)}">{{ s.utente.charAt(0) }}</div>
+            <span style="flex:1;font-size:15px">{{ s.utente }}</span>
+            <span :style="{fontWeight:'600',fontSize:'16px',color: s.saldo >= 0 ? 'var(--green)' : 'var(--red)'}">{{ s.saldo >= 0 ? '+' : '' }}{{ formatN(s.saldo) }}</span>
+          </div>
+        </div>
+        
+        <button @click="showNuovaSpesa = true" class="btn btn-success" style="margin:0 16px 16px;width:calc(100% - 32px)">+ Nuova spesa</button>
+        
+        <div v-for="s in viaggioCorrente?.spese?.sort((a,b)=>new Date(b.dataSpesa)-new Date(a.dataSpesa))" :key="s.id" class="card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+            <div>
+              <h4 style="font-size:16px;font-weight:600">{{ s.titolo }}</h4>
+              <p style="font-size:13px;color:var(--gray);margin-top:2px">Pagato da {{ s.pagatoDa }}</p>
+            </div>
+            <span style="font-size:20px;font-weight:700">{{ formatN(s.importo) }}</span>
+          </div>
+          <div style="border-top:1px solid var(--bg);padding-top:10px">
+            <div style="font-size:12px;color:var(--gray);margin-bottom:8px">Divisione</div>
+            <div v-for="d in s.divisioni" :key="d.id" style="display:flex;justify-content:space-between;font-size:14px;padding:4px 0">
+              <span>{{ d.nomeUtente }}</span>
+              <span style="font-weight:500">{{ formatN(d.quota) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- PLACEHOLDER -->
+      <div v-if="tab === 'prenotazioni' || tab === 'itinerario'" style="text-align:center;padding:60px 20px;color:var(--gray)">
+        <div style="font-size:48px">{{ tab === 'prenotazioni' ? '🏨' : '🗺️' }}</div>
+        <p style="margin-top:12px;font-size:16px">{{ tab === 'prenotazioni' ? 'Prenotazioni' : 'Itinerario' }}</p>
+      </div>
+      
+      <!-- TAB BAR -->
+      <div class="tab-bar">
+        <button v-for="t in tabs" :key="t.key" :class="['tab-item', {active: tab === t.key}]" @click="tab = t.key">
+          <span>{{ t.icon }}</span>
+          <span>{{ t.label }}</span>
+        </button>
+      </div>
+    </div>
+    
+    <!-- ARCHIVIO -->
+    <div v-if="page === 'archivio'" class="page">
+      <div style="display:flex;align-items:center;gap:12px;padding:16px;padding-top:calc(16px + env(safe-area-inset-top))">
+        <button @click="page = 'home'" style="width:36px;height:36px;border-radius:50%;border:none;background:var(--bg);font-size:20px">←</button>
+        <h1 style="font-size:28px;font-weight:700">📦 Archivio</h1>
+        <div style="width:36px"></div>
+      </div>
+      <div style="padding:0 20px 16px;color:var(--gray);font-size:15px">{{ archiviati.length }} viaggi completati</div>
+      
+      <div v-for="v in archiviati" :key="v.id" class="card">
+        <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:10px">
+          <span style="font-size:40px">{{ v.copertina }}</span>
+          <div style="flex:1">
+            <h3 style="font-size:16px;font-weight:600">{{ v.nome }}</h3>
+            <p style="font-size:13px;color:var(--gray)">{{ formatDate(v.dataInizio, v.dataFine) }}</p>
+          </div>
+          <span :style="{padding:'4px 10px',borderRadius:'100px',fontSize:'12px',fontWeight:'600',background: v.stato === 'archiviato' ? '#34C75920' : '#FF3B3020', color: v.stato === 'archiviato' ? 'var(--green)' : 'var(--red)'}">
+            {{ v.stato === 'archiviato' ? '✅ Completato' : '❌ Annullato' }}
+          </span>
+        </div>
+        <p style="font-size:14px;color:var(--gray)">💰 Speso: {{ formatN(v.spese.reduce((a,s)=>a+s.importo,0)) }}</p>
+      </div>
+    </div>
+    
+    <!-- MODAL NUOVO VIAGGIO -->
+    <div v-if="showNuovo" class="modal" @click.self="showNuovo = false">
+      <div class="modal-sheet">
+        <h2 style="margin-bottom:20px;font-size:22px">Nuovo viaggio</h2>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+          <button v-for="e in copertine" :key="e" @click="nuovo.copertina = e" :style="{aspectRatio:'1',fontSize:'32px',border:'none',borderRadius:'12px',background: nuovo.copertina === e ? '#007AFF20' : 'var(--bg)',boxShadow: nuovo.copertina === e ? '0 0 0 2px var(--blue)' : 'none'}">{{ e }}</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:20px">
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Nome *</span><input v-model="nuovo.nome" class="input" placeholder="Giappone 2026"></label>
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Destinazione *</span><input v-model="nuovo.destinazione" class="input" placeholder="Tokyo, Giappone"></label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Partenza</span><input type="date" v-model="nuovo.dataInizio" class="input"></label>
+            <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Ritorno</span><input type="date" v-model="nuovo.dataFine" class="input"></label>
+          </div>
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Budget</span><input v-model="nuovo.budget" class="input" placeholder="5000" type="number"></label>
+        </div>
+        <button @click="creaViaggio" class="btn btn-primary" :disabled="!nuovo.nome || !nuovo.destinazione">Crea viaggio</button>
+        <button @click="showNuovo = false" class="btn btn-ghost">Annulla</button>
+      </div>
+    </div>
+    
+    <!-- MODAL NUOVO PREVENTIVO -->
+    <div v-if="showNuovoPreventivo" class="modal" @click.self="showNuovoPreventivo = false">
+      <div class="modal-sheet">
+        <h2 style="margin-bottom:20px;font-size:22px">Nuovo preventivo</h2>
+        <div style="display:flex;gap:8px;overflow-x:auto;margin-bottom:20px;padding-bottom:4px">
+          <button v-for="c in categorie" :key="c" @click="nuovoPrev.categoria = c" :style="{flexShrink:0,padding:'10px 14px',borderRadius:'12px',border:'none',background: nuovoPrev.categoria === c ? '#007AFF20' : 'var(--bg)',boxShadow: nuovoPrev.categoria === c ? '0 0 0 2px var(--blue)' : 'none',fontSize:'14px',whiteSpace:'nowrap'}">{{ c }}</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:20px">
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Titolo *</span><input v-model="nuovoPrev.titolo" class="input" placeholder="Volo JAL"></label>
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Fornitore</span><input v-model="nuovoPrev.fornitore" class="input" placeholder="Expedia"></label>
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Prezzo *</span><input v-model="nuovoPrev.prezzo" class="input" placeholder="1200" type="number"></label>
+          <div>
+            <span style="font-size:13px;color:var(--gray);display:block;margin-bottom:8px">Priorità</span>
+            <div style="display:flex;gap:8px">
+              <button v-for="pr in [{v:0,l:'Bassa',e:'🔵',c:'#007AFF'},{v:1,l:'Media',e:'🟢',c:'#34C759'},{v:2,l:'Alta',e:'🟡',c:'#FF9500'},{v:3,l:'Urgente',e:'🔴',c:'#FF3B30'}]" :key="pr.v" @click="nuovoPrev.priorita = pr.v" :style="{flex:1,padding:'10px',borderRadius:'12px',border:'none',background: nuovoPrev.priorita === pr.v ? pr.c + '25' : 'var(--bg)',color: nuovoPrev.priorita === pr.v ? pr.c : 'inherit',fontSize:'13px',fontWeight: nuovoPrev.priorita === pr.v ? '700' : '500'}">{{ pr.e }} {{ pr.l }}</button>
+            </div>
+          </div>
+        </div>
+        <button @click="creaPreventivo" class="btn btn-primary" :disabled="!nuovoPrev.titolo || !nuovoPrev.prezzo">Salva</button>
+        <button @click="showNuovoPreventivo = false" class="btn btn-ghost">Annulla</button>
+      </div>
+    </div>
+    
+    <!-- MODAL NUOVA SPESA -->
+    <div v-if="showNuovaSpesa" class="modal" @click.self="showNuovaSpesa = false">
+      <div class="modal-sheet">
+        <h2 style="margin-bottom:20px;font-size:22px">Nuova spesa</h2>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:20px">
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Titolo *</span><input v-model="nuovaSpesa.titolo" class="input" placeholder="Cena sushi"></label>
+          <label><span style="font-size:13px;color:var(--gray);display:block;margin-bottom:6px">Importo *</span><input v-model="nuovaSpesa.importo" class="input" placeholder="45" type="number"></label>
+          <div>
+            <span style="font-size:13px;color:var(--gray);display:block;margin-bottom:10px">Dividi con</span>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <button v-for="p in viaggioCorrente?.partecipazioni?.filter(x=>x.stato==='accettato')" :key="p.utenteId" @click="togglePartecipante(p.utenteId)" :style="{display:'flex',alignItems:'center',gap:'12px',padding:'12px',borderRadius:'12px',border:'none',background: nuovaSpesa.selezionati.has(p.utenteId) ? '#34C75915' : 'var(--bg)',textAlign:'left'}">
+                <div style="width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:14px;font-weight:700" :style="{background: randomColor(p.utenteId)}">{{ p.nomeUtente.charAt(0) }}</div>
+                <span style="flex:1;font-size:15px">{{ p.nomeUtente }}</span>
+                <span v-if="nuovaSpesa.selezionati.has(p.utenteId)" style="color:var(--green);font-size:20px;font-weight:700">✓</span>
+              </button>
+            </div>
+          </div>
+        </div>
+        <button @click="creaSpesa" class="btn btn-success" :disabled="!nuovaSpesa.titolo || !nuovaSpesa.importo || nuovaSpesa.selezionati.size === 0">Salva</button>
+        <button @click="showNuovaSpesa = false" class="btn btn-ghost">Annulla</button>
+      </div>
+    </div>
+    
+    <!-- MODAL MENU -->
+    <div v-if="showMenu" class="modal" @click.self="showMenu = false">
+      <div class="modal-sheet">
+        <h3 style="margin-bottom:16px">{{ viaggioCorrente?.nome }}</h3>
+        <button @click="invitaPartecipante" class="btn btn-primary" style="margin-bottom:10px">👤 Invita partecipante</button>
+        <button @click="esciViaggio" class="btn btn-danger" style="margin-bottom:10px">🚪 Esci dal viaggio</button>
+        <button @click="showMenu = false" class="btn btn-ghost">Annulla</button>
+      </div>
+    </div>
+    
+    <!-- MODAL SETTINGS -->
+    <div v-if="showSettings" class="modal" @click.self="showSettings = false">
+      <div class="modal-sheet">
+        <h3 style="margin-bottom:16px">Impostazioni</h3>
+        <button @click="exportData(); showSettings = false" class="btn btn-primary" style="margin-bottom:12px">📤 Esporta backup</button>
+        <label style="display:block;margin-bottom:20px">
+          <span class="btn btn-success" style="display:block;text-align:center">📥 Importa backup</span>
+          <input type="file" accept=".json" @change="importData" hidden>
+        </label>
+        <button @click="showSettings = false" class="btn btn-ghost">Chiudi</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed } = Vue;
+    
+    createApp({
+      setup() {
+        const page = ref('home');
+        const tab = ref('preventivi');
+        const viaggioId = ref(null);
+        const showNuovo = ref(false);
+        const showNuovoPreventivo = ref(false);
+        const showNuovaSpesa = ref(false);
+        const showMenu = ref(false);
+        const showSettings = ref(false);
+        
+        const copertine = ['✈️','🏖️','🏔️','🏙️','🌅','🚗','🚢','🎿'];
+        const categorie = ['✈️ Volo','🏨 Hotel','🚗 Trasferimento','🎫 Attività','🛡️ Assicurazione','📦 Pacchetto','📋 Altro'];
+        const tabs = [
+          {key:'preventivi',icon:'📋',label:'Preventivi'},
+          {key:'prenotazioni',icon:'🏨',label:'Prenotazioni'},
+          {key:'spese',icon:'💰',label:'Spese'},
+          {key:'itinerario',icon:'🗺️',label:'Itinerario'}
+        ];
+        
+        const nuovo = ref({copertina:'✈️',nome:'',destinazione:'',dataInizio:new Date().toISOString().split('T')[0],dataFine:new Date(Date.now()+86400000*7).toISOString().split('T')[0],budget:''});
+        const nuovoPrev = ref({categoria:'✈️ Volo',titolo:'',fornitore:'',prezzo:'',priorita:1});
+        const nuovaSpesa = ref({titolo:'',importo:'',selezionati:new Set()});
+        
+        const viaggi = ref([]);
+        
+        const load = () => {
+          const saved = localStorage.getItem('vacation_data');
+          if (saved) viaggi.value = JSON.parse(saved);
+        };
+        
+        const save = () => {
+          localStorage.setItem('vacation_data', JSON.stringify(viaggi.value));
+        };
+        
+        load();
+        
+        const attivi = computed(() => viaggi.value.filter(v => v.stato === 'attivo').sort((a,b) => new Date(a.dataInizio) - new Date(b.dataInizio)));
+        const archiviati = computed(() => viaggi.value.filter(v => v.stato !== 'attivo').sort((a,b) => new Date(b.dataInizio) - new Date(a.dataInizio)));
+        
+        const viaggioCorrente = computed(() => viaggi.value.find(v => v.id === viaggioId.value));
+        
+        const saldi = computed(() => {
+          if (!viaggioCorrente.value) return [];
+          const result = {};
+          viaggioCorrente.value.spese.forEach(spesa => {
+            result[spesa.pagatoDa] = (result[spesa.pagatoDa] || 0) + spesa.importo;
+            spesa.divisioni.forEach(div => {
+              result[div.utenteId] = (result[div.utenteId] || 0) - div.quota;
+            });
+          });
+          return Object.entries(result).map(([utente, saldo]) => ({utente, saldo}));
+        });
+        
+        const apriViaggio = (v) => {
+          viaggioId.value = v.id;
+          tab.value = 'preventivi';
+          page.value = 'detail';
+        };
+        
+        const creaViaggio = () => {
+          viaggi.value.push({
+            id: crypto.randomUUID(),
+            stato: 'attivo',
+            creatoIl: new Date().toISOString(),
+            partecipazioni: [{id:crypto.randomUUID(),utenteId:'tu',nomeUtente:'Tu',stato:'accettato',invitatoDa:'tu',invitatoIl:new Date().toISOString()}],
+            preventivi: [],
+            prenotazioni: [],
+            spese: [],
+            tappe: [],
+            ...nuovo.value,
+            budget: nuovo.value.budget ? parseFloat(nuovo.value.budget) : null
+          });
+          save();
+          showNuovo.value = false;
+          nuovo.value = {copertina:'✈️',nome:'',destinazione:'',dataInizio:new Date().toISOString().split('T')[0],dataFine:new Date(Date.now()+86400000*7).toISOString().split('T')[0],budget:''};
+        };
+        
+        const creaPreventivo = () => {
+          const v = viaggi.value.find(v => v.id === viaggioId.value);
+          v.preventivi.push({
+            id: crypto.randomUUID(),
+            creatoIl: new Date().toISOString(),
+            stato: 'bozza',
+            valuta: 'EUR',
+            ...nuovoPrev.value,
+            prezzo: parseFloat(nuovoPrev.value.prezzo)
+          });
+          save();
+          showNuovoPreventivo.value = false;
+          nuovoPrev.value = {categoria:'✈️ Volo',titolo:'',fornitore:'',prezzo:'',priorita:1};
+        };
+        
+        const convertiPreventivo = (pid) => {
+          const v = viaggi.value.find(v => v.id === viaggioId.value);
+          const p = v.preventivi.find(p => p.id === pid);
+          p.stato = 'accettato';
+          v.prenotazioni.push({
+            id: crypto.randomUUID(),
+            titolo: p.titolo,
+            categoria: p.categoria,
+            fornitore: p.fornitore,
+            prezzoPagato: p.prezzo,
+            valuta: p.valuta,
+            dataInizio: p.dataPartenza || new Date().toISOString(),
+            creatoIl: new Date().toISOString()
+          });
+          save();
+        };
+        
+        const togglePartecipante = (id) => {
+          const s = new Set(nuovaSpesa.value.selezionati);
+          if (s.has(id)) s.delete(id); else s.add(id);
+          nuovaSpesa.value.selezionati = s;
+        };
+        
+        const creaSpesa = () => {
+          const v = viaggi.value.find(v => v.id === viaggioId.value);
+          const quota = parseFloat(nuovaSpesa.value.importo) / nuovaSpesa.value.selezionati.size;
+          const divisioni = Array.from(nuovaSpesa.value.selezionati).map(uid => ({
+            id: crypto.randomUUID(),
+            utenteId: uid,
+            nomeUtente: v.partecipazioni.find(p => p.utenteId === uid)?.nomeUtente || uid,
+            quota,
+            pagato: false
+          }));
+          v.spese.push({
+            id: crypto.randomUUID(),
+            titolo: nuovaSpesa.value.titolo,
+            importo: parseFloat(nuovaSpesa.value.importo),
+            valuta: 'EUR',
+            dataSpesa: new Date().toISOString(),
+            pagatoDa: 'tu',
+            creatoIl: new Date().toISOString(),
+            divisioni,
+            ricalcoli: []
+          });
+          save();
+          showNuovaSpesa.value = false;
+          nuovaSpesa.value = {titolo:'',importo:'',selezionati:new Set()};
+        };
+        
+        const invitaPartecipante = () => {
+          showMenu.value = false;
+          const nome = prompt('Nome del partecipante:');
+          if (nome) {
+            const v = viaggi.value.find(v => v.id === viaggioId.value);
+            v.partecipazioni.push({
+              id: crypto.randomUUID(),
+              utenteId: crypto.randomUUID(),
+              nomeUtente: nome,
+              stato: 'invitato',
+              invitatoDa: 'tu',
+              invitatoIl: new Date().toISOString()
+            });
+            save();
+          }
+        };
+        
+        const esciViaggio = () => {
+          showMenu.value = false;
+          if (!confirm('Se esci, le spese verranno ricalcolate. Confermi?')) return;
+          const v = viaggi.value.find(v => v.id === viaggioId.value);
+          const p = v.partecipazioni.find(p => p.utenteId === 'tu');
+          p.stato = 'uscito';
+          p.uscitoIl = new Date().toISOString();
+          const attivi = v.partecipazioni.filter(p => p.stato === 'accettato').map(p => p.utenteId);
+          v.spese.forEach(spesa => {
+            const vecchiaDiv = JSON.parse(JSON.stringify(spesa.divisioni));
+            const nuovaQuota = spesa.importo / attivi.length;
+            spesa.divisioni = attivi.map(uid => ({
+              id: crypto.randomUUID(),
+              utenteId: uid,
+              nomeUtente: v.partecipazioni.find(p => p.utenteId === uid)?.nomeUtente || uid,
+              quota: nuovaQuota,
+              pagato: false
+            }));
+            spesa.ricalcoli.push({
+              id: crypto.randomUUID(),
+              dataRicalcolo: new Date().toISOString(),
+              motivo: 'Uscita di tu',
+              vecchiaDivisione: vecchiaDiv,
+              nuovaDivisione: JSON.parse(JSON.stringify(spesa.divisioni))
+            });
+          });
+          save();
+          page.value = 'home';
+        };
+        
+        const exportData = () => {
+          const dataStr = JSON.stringify(viaggi.value, null, 2);
+          const blob = new Blob([dataStr], {type:'application/json'});
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `vacation-backup-${new Date().toISOString().split('T')[0]}.json`;
+          a.click();
+          URL.revokeObjectURL(url);
+        };
+        
+        const importData = (e) => {
+          const file = e.target.files[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = (ev) => {
+            try {
+              viaggi.value = JSON.parse(ev.target.result);
+              save();
+              alert('Dati importati!');
+            } catch(err) { alert('File non valido'); }
+          };
+          reader.readAsText(file);
+        };
+        
+        const formatDate = (i, f) => {
+          const opts = {day:'numeric', month:'short'};
+          const d1 = new Date(i).toLocaleDateString('it-IT', opts);
+          const d2 = new Date(f).toLocaleDateString('it-IT', opts);
+          return `${d1} → ${d2}`;
+        };
+        
+        const formatN = (n) => new Intl.NumberFormat('it-IT', {maximumFractionDigits:2}).format(n);
+        
+        const progressColor = (p) => {
+          if (p < 0.5) return '#34C759';
+          if (p < 0.8) return '#FF9500';
+          return '#FF3B30';
+        };
+        
+        const randomColor = (seed) => {
+          const colors = ['#007AFF','#34C759','#FF9500','#AF52DE','#FF2D55','#5AC8FA','#5856D6'];
+          let hash = 0;
+          for (let i = 0; i < seed.length; i++) hash = seed.charCodeAt(i) + ((hash << 5) - hash);
+          return colors[Math.abs(hash) % colors.length];
+        };
+        
+        const badgeBg = (stato) => {
+          const map = {bozza:'#8E8E9320', ricevuto:'#007AFF20', inValutazione:'#FF950020', accettato:'#34C75920', rifiutato:'#FF3B3020', scaduto:'#8E8E9320'};
+          return map[stato] || '#8E8E9320';
+        };
+        
+        const badgeColor = (stato) => {
+          const map = {bozza:'var(--gray)', ricevuto:'var(--blue)', inValutazione:'var(--orange)', accettato:'var(--green)', rifiutato:'var(--red)', scaduto:'var(--gray)'};
+          return map[stato] || 'var(--gray)';
+        };
+        
+        return {
+          page, tab, viaggioId, showNuovo, showNuovoPreventivo, showNuovaSpesa, showMenu, showSettings,
+          copertine, categorie, tabs,
+          nuovo, nuovoPrev, nuovaSpesa,
+          viaggi, attivi, archiviati, viaggioCorrente, saldi,
+          apriViaggio, creaViaggio, creaPreventivo, convertiPreventivo,
+          togglePartecipante, creaSpesa,
+          invitaPartecipante, esciViaggio,
+          exportData, importData,
+          formatDate, formatN, progressColor, randomColor, badgeBg, badgeColor
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
